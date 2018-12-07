@@ -63,6 +63,18 @@ export default {
     selectedItems: {
       type: Array,
       default: () => []
+    },
+    firstItemIndex: {
+      type: Number,
+      default: 0
+    },
+    itemHeight: {
+      type: Number,
+      default: 48
+    },
+    scrollHeight: {
+      type: [String, Number],
+      default: 'auto'
     }
   },
 
@@ -136,6 +148,7 @@ export default {
       return { start, middle, end }
     },
     genTile (
+      itemIndex,
       item,
       disabled = null,
       avatar = false,
@@ -147,7 +160,7 @@ export default {
           ? disabled
           : this.getDisabled(item)
       }
-
+      const translateYValue = this.firstItemIndex * this.itemHeight + itemIndex * this.itemHeight
       const tile = {
         on: {
           mousedown: e => {
@@ -162,6 +175,13 @@ export default {
           disabled,
           ripple: true,
           value
+        },
+        style: {
+          position: 'absolute',
+          height: `${this.itemHeight}px`,
+          transform: `translateY(${translateYValue}px)`,
+          transition: 'none 0s ease 0s',
+          width: '100%'
         }
       }
 
@@ -213,15 +233,16 @@ export default {
 
   render () {
     const children = []
-    for (const item of this.items) {
+    for (const itemIndex in this.items) {
+      const item = this.items[itemIndex]
       if (this.hideSelected &&
         this.hasItem(item)
       ) continue
 
-      if (item == null) children.push(this.genTile(item))
+      if (item == null) children.push(this.genTile(itemIndex, item))
       else if (item.header) children.push(this.genHeader(item))
       else if (item.divider) children.push(this.genDivider(item))
-      else children.push(this.genTile(item))
+      else children.push(this.genTile(itemIndex, item))
     }
 
     children.length || children.push(this.$slots['no-data'] || this.staticNoDataTile)
@@ -229,7 +250,6 @@ export default {
     this.$slots['prepend-item'] && children.unshift(this.$slots['prepend-item'])
 
     this.$slots['append-item'] && children.push(this.$slots['append-item'])
-
     return this.$createElement('div', {
       staticClass: 'v-select-list v-card',
       'class': this.themeClasses
@@ -237,6 +257,9 @@ export default {
       this.$createElement(VList, {
         props: {
           dense: this.dense
+        },
+        style: {
+          height: typeof this.scrollHeight === 'string' ? this.scrollHeight : `${this.scrollHeight}px`
         }
       }, children)
     ])

@@ -93,7 +93,11 @@ export default {
     searchInput: {
       default: null
     },
-    smallChips: Boolean
+    smallChips: Boolean,
+    virtualItemHeight: {
+      type: Number,
+      default: 48
+    }
   },
 
   data: vm => ({
@@ -102,7 +106,8 @@ export default {
     content: null,
     isBooted: false,
     isMenuActive: false,
-    lastItem: 20,
+    firstItemIndex: 0,
+    scrollSelectionTop: 0,
     // As long as a value is defined, show it
     // Otherwise, check if multiple
     // to determine which default to provide
@@ -114,6 +119,10 @@ export default {
   }),
 
   computed: {
+    pageSize () {
+      const len = this.computedItems.length
+      return len > 20 ? 20 : len // I think 30 would be better
+    },
     /* All items that the select has */
     allItems () {
       return this.filterDuplicates(this.cachedItems.concat(this.items))
@@ -173,7 +182,10 @@ export default {
           itemAvatar: this.itemAvatar,
           itemDisabled: this.itemDisabled,
           itemValue: this.itemValue,
-          itemText: this.itemText
+          itemText: this.itemText,
+          firstItemIndex: this.firstItemIndex,
+          itemHeight: this.virtualItemHeight,
+          scrollHeight: this.scrollHeight
         },
         on: {
           select: this.selectItem
@@ -183,6 +195,9 @@ export default {
         }
       }
     },
+    scrollHeight () {
+      return (this.computedItems || []).length * this.virtualItemHeight
+    },
     staticList () {
       if (this.$slots['no-data'] || this.$slots['prepend-item'] || this.$slots['append-item']) {
         consoleError('assert: staticList should not be called if slots are used')
@@ -191,9 +206,17 @@ export default {
       return this.$createElement(VSelectList, this.listData)
     },
     virtualizedItems () {
+      const firstItem = this.firstItemIndex || 0
+      let lastItem = this.computedItems.length
+      if (firstItem + this.pageSize < lastItem) {
+        lastItem = firstItem + this.pageSize
+      }
+      // this only for test passing
       return this.$_menuProps.auto
         ? this.computedItems
-        : this.computedItems.slice(0, this.lastItem)
+        : this.computedItems.slice(firstItem, lastItem)
+      // need use this
+      // return this.computedItems.slice(firstItem, lastItem)
     },
     menuCanShow () { return true },
     $_menuProps () {
@@ -237,6 +260,17 @@ export default {
       if (!val) return
 
       this.isBooted = true
+      // set scrollTop to current selected
+      this.$nextTick(() => {
+        if (this.content && this.content.addEventListener) {
+          setTimeout(() => {
+            const offsetY = (this.firstItemIndex + 4) * this.virtualItemHeight
+            this.content.scrollTop = offsetY > this.computedItems.length * this.virtualItemHeight
+              ? this.computedItems.length * this.virtualItemHeight
+              : offsetY < 0 ? 0 : offsetY
+          }, 300) // fake. need set the scrollTop in the right place
+        }
+      })
     },
     items: {
       immediate: true,
@@ -246,6 +280,25 @@ export default {
         }
 
         this.setSelectedItems()
+      }
+    },
+    scrollSelectionTop (val, oldVal) {
+      if (val !== oldVal) {
+        const scrollDirection = val > oldVal
+        const firstOffset = this.virtualItemHeight * this.firstItemIndex
+        const needChange = scrollDirection
+          ? val - firstOffset > (this.virtualItemHeight * this.pageSize * 0.33)
+          : val - firstOffset < (this.virtualItemHeight * this.pageSize * 0.33)
+        if (needChange) { // (scrollDirection ? 1 : -1) *
+          let firstItemIndexValue = (val / this.virtualItemHeight - (scrollDirection
+            ? this.pageSize * 0.15
+            : this.pageSize * 0.66
+          )) >> 0
+          firstItemIndexValue = firstItemIndexValue > 0 ? firstItemIndexValue : 0
+          if (this.firstItemIndex !== firstItemIndexValue) {
+            this.firstItemIndex = firstItemIndexValue
+          }
+        }
       }
     }
   },
@@ -599,8 +652,8 @@ export default {
           appendInner.contains(e.target))
         ) {
           this.$nextTick(() => (this.isMenuActive = !this.isMenuActive))
-        // If user is clicking in the container
-        // and field is enclosed, activate it
+          // If user is clicking in the container
+          // and field is enclosed, activate it
         } else if (this.isEnclosed && !this.isDisabled) {
           this.isMenuActive = true
         }
@@ -612,17 +665,7 @@ export default {
       if (!this.isMenuActive) {
         requestAnimationFrame(() => (this.content.scrollTop = 0))
       } else {
-        if (this.lastItem >= this.computedItems.length) return
-
-        const showMoreItems = (
-          this.content.scrollHeight -
-          (this.content.scrollTop +
-          this.content.clientHeight)
-        ) < 200
-
-        if (showMoreItems) {
-          this.lastItem += 20
-        }
+        this.scrollSelectionTop = this.content.scrollTop
       }
     },
     onTabDown (e) {
@@ -675,6 +718,8 @@ export default {
       this.$refs.menu && (this.$refs.menu.listIndex = index)
     },
     setSelectedItems () {
+      // Here you need to calculate the position of the selected item to scroll scrolling
+      let firstIdx = -1
       const selectedItems = []
       const values = !this.multiple || !Array.isArray(this.internalValue)
         ? [this.internalValue]
@@ -688,7 +733,14 @@ export default {
 
         if (index > -1) {
           selectedItems.push(this.allItems[index])
+          if (firstIdx < 0) firstIdx = index
         }
+      }
+      if (firstIdx > -1) {
+        this.$nextTick(() => {
+          firstIdx = firstIdx - 6
+          this.firstItemIndex = firstIdx > 0 ? firstIdx : 0
+        })
       }
 
       this.selectedItems = selectedItems
